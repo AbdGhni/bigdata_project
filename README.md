@@ -4,7 +4,7 @@
 GHANI Abdullah ; LIN Victor (ECE, Écosystème Big Data II)
 
 ## Prérequis
-- Compte Onyxia, service `vscode-pyspark` (4 CPU / 4 Go), rôle Kubernetes permettant `kubectl create job` dans son namespace.
+- Compte Onyxia, service `vscode-pyspark` (utilisé : 3 CPU / 3 Gi, quota du namespace), rôle Kubernetes permettant `kubectl create job` dans son namespace.
 - Dans le service : `git`, `aws` CLI, `kubectl`, `spark-submit` (fournis par l'image) ; `pip install -r src/requirements.txt`.
 - Accès Internet sortant vers `data.ademe.fr` (téléchargement des données brutes).
 
