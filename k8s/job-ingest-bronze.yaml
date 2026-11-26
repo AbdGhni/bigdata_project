@@ -1,0 +1,62 @@
+# Ingestion bronze : un initContainer télécharge les CSV AGRIBALYSE (data.ademe.fr),
+# le conteneur principal contrôle la taille et dépose dans S3 Onyxia.
+# Pré-requis (créés par src/run_all.sh) : ConfigMap agb-s3-config, Secret agb-s3-credentials.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agb-ingest-bronze
+  labels: {app: bigdata-project, step: ingest}
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: bigdata-project, step: ingest}
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: download
+          image: curlimages/curl:8.11.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              B=https://data.ademe.fr/data-fair/api/v1/datasets
+              curl -fsSL --retry 3 -o /data/agribalyse_synthese.csv $B/agribalyse-31-synthese/raw
+              curl -fsSL --retry 3 -o /data/agribalyse_detail_ingredient.csv $B/agribalyse-31-detail-par-ingredient/raw
+              echo "download date: $(date -u +%FT%TZ)"; ls -l /data
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          volumeMounts: [{name: data, mountPath: /data}]
+      containers:
+        - name: upload
+          image: amazon/aws-cli:2.22.0
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "=== [job-ingest] namespace=$POD_NAMESPACE pod=$HOSTNAME date=$(date '+%F %T %Z')"
+              total=0
+              for f in agribalyse_synthese.csv agribalyse_detail_ingredient.csv; do
+                size=$(stat -c %s /data/$f); total=$((total + size))
+                sha=$(sha256sum /data/$f | cut -d' ' -f1)
+                echo "$f $size octets sha256=$sha"
+                aws s3 cp /data/$f s3://$LAB_BUCKET_NAME/bigdata_project/bronze/$f --metadata sha256=$sha
+              done
+              echo "TAILLE TOTALE BRUTE: $total octets"
+              [ "$total" -gt 1000000 ] && [ "$total" -lt 5000000 ] || { echo "HORS BORNE"; exit 1; }
+              aws s3 ls s3://$LAB_BUCKET_NAME/bigdata_project/bronze/ --summarize
+          env:
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          envFrom:
+            - configMapRef: {name: agb-s3-config}
+            - secretRef: {name: agb-s3-credentials}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 300m, memory: 256Mi}
+          volumeMounts: [{name: data, mountPath: /data, readOnly: true}]
+      volumes:
+        - name: data
+          emptyDir: {sizeLimit: 50Mi}
