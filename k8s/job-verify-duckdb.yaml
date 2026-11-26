@@ -1,0 +1,42 @@
+# Vérification indépendante : pod séparé (image python officielle), moteur DuckDB,
+# relit les CSV bronze et la couche gold produite par Spark, et compare.
+# Le code est monté depuis la ConfigMap agb-verify-code (créée par src/run_all.sh).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agb-verify-duckdb
+  labels: {app: bigdata-project, step: verify}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: bigdata-project, step: verify}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: verify
+          image: python:3.12-slim
+          workingDir: /app
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              pip install --quiet --no-cache-dir "duckdb>=1.1,<2"
+              echo "pod=$HOSTNAME namespace=$KUBERNETES_NAMESPACE"
+              python 04_verify_duckdb.py
+          env:
+            - name: KUBERNETES_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: HOME
+              value: /tmp
+          envFrom:
+            - configMapRef: {name: agb-s3-config}
+            - secretRef: {name: agb-s3-credentials}
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: 900m, memory: 900Mi}
+          volumeMounts: [{name: code, mountPath: /app}]
+      volumes:
+        - name: code
+          configMap: {name: agb-verify-code}
