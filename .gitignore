@@ -1,0 +1,10 @@
+local_lake/
+logs/
+reports/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.env
+spark-warehouse/
+metastore_db/
+derby.log
